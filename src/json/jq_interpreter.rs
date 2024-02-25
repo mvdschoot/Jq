@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::vec;
 
-use crate::json::json_components::Json;
 use crate::json::jq_components::Jq;
+use crate::json::json_components::Json;
 
 type InterpretResult = Result<Vec<Json>, String>;
 

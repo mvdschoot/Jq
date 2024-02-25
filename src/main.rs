@@ -1,4 +1,5 @@
 use std::{env, fs};
+use std::path::PathBuf;
 
 use json::jq_parser;
 
@@ -13,8 +14,12 @@ fn main() {
         eprintln!("There should be extra 2 arguments: a file name and a Jq string");
         return
     }
-    
-    let mut input: String = fs::read_to_string(arguments.nth(1).unwrap()).expect("Cannot find file");
+
+    let mut file_location: String = "./".to_string();
+    if let Ok(cwd) = env::current_dir() {
+        file_location = cwd.join(PathBuf::from(arguments.nth(1).unwrap())).to_str().unwrap().to_string();
+    }
+    let mut input: String = fs::read_to_string(file_location).expect("Cannot find file");
 
     // let mut input = fs::read_to_string("test.json").unwrap();
     // let jq_text = ".pom.dependencies[1:4][].a".to_string();
