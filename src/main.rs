@@ -1,5 +1,5 @@
-use std::{env, fs};
 use std::path::PathBuf;
+use std::{env, fs};
 
 use json::jq_parser;
 
@@ -22,18 +22,22 @@ fn main() {
     let mut input: String = fs::read_to_string(file_location).expect("Cannot find file");
 
     // let mut input = fs::read_to_string("test.json").unwrap();
-    // let jq_text = ".pom.dependencies[1:4][].a".to_string();
+    // let jq_text = " |(. | .pom) | .".to_string();
 
-    if let Some(res) = json::json_parser::parse_json(&mut input) {
-        let jq_text = arguments.nth(0).expect("Unreachable");
-        if let Some(parsed) = jq_parser::parse(jq_text.as_str()) {
-            let result = jq_interpreter::interpret(vec![res], parsed);
-            match result {
-                Ok(res) => print!("{}", res.iter().map(print).collect::<Vec<String>>().join("\n")),
-                Err(err) => eprintln!("Error with interpreting: {err}")
+    if let Some((res, leftover)) = json::json_parser::parse_json(&mut input) {
+        if leftover == "" {
+            let jq_text = arguments.nth(0).expect("Unreachable");
+            if let Some(parsed) = jq_parser::parse(jq_text.as_str()) {
+                let result = jq_interpreter::interpret(vec![res], parsed);
+                match result {
+                    Ok(res) => print!("{}", res.iter().map(print).collect::<Vec<String>>().join("\n")),
+                    Err(err) => eprintln!("Error with interpreting: {err}")
+                }
+            } else {
+                eprintln!("Failed to parse the Jq string")
             }
         } else {
-            eprintln!("Failed to parse the Jq string")
+            eprintln!("Failed to parse json, leftover: {leftover}")
         }
     } else {
         eprintln!("Failed to parse the JSON file");

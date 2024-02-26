@@ -1,95 +1,40 @@
 use std::collections::HashMap;
 
-use crate::json::json_components::Json;
+use crate::json::{json_components::Json, util::*};
 
-fn skip_stuff(input: &mut String) {
-    let to_skip = vec!['\n', '\t', ' '];
-
-    for (i, char) in input.chars().enumerate()  {
-        if !to_skip.contains(&char) {
-            trim(input, i);
-            return
-        }
-    }
-}
-
-fn get_word(input: &mut String, word: &str) -> Option<usize> {
-    skip_stuff(input);
-    if input.len() == 0 {
-        return None
-    }
-
-    let zipped = word.chars().zip(input.chars());
-    for (w, i) in zipped {
-        if w != i {
-            return None
-        }
-    }
-    return Some(word.len())
-}
-
-fn get_char(input: &mut String, c: char) -> Option<usize> {
-    skip_stuff(input);
-    if let Some(ch) = input.chars().nth(0) {
-        if c == ch {
-            return Some(1);
-        }
-    }
-    None
-}
-
-fn get_chars(input: &mut String, cs: Vec<char>) -> Option<char> {
-    skip_stuff(input);
-    input.chars().next().and_then(|ch| {
-        if cs.contains(&ch) {
-            Some(ch)
-        } else {
-            None
-        }
-    })
-}
-
-fn trim(input: &mut String, n: usize) {
-    let len = input.len().min(n);
-    input.drain(..len);
-}
-
-pub fn parse_null(input: &mut String) -> Option<Json> {
-    if let Some(l) = get_word(input, "null") {
-        trim(input, l);
-        Some(Json::Null)
+pub fn parse_null(input: &str) -> Option<(Json, &str)> {
+    if let Some(n_res) = get_word(input, "null") {
+        Some((Json::Null, n_res))
     } else {
         None
     }
 }
 
-pub fn parse_boolean(input: &mut String) -> Option<Json> {
-    if let Some(l) = get_word(input, "true") {
-        trim(input, l);
-        Some(Json::Boolean(true))
-    } else if let Some(l) = get_word(input, "false") {
-        trim(input, l);
-        Some(Json::Boolean(false))
+pub fn parse_boolean(input: &str) -> Option<(Json, &str)> {
+    if let Some(b_res) = get_word(input, "true") {
+        Some((Json::Boolean(true), b_res))
+    } else if let Some(b_res) = get_word(input, "false") {
+        Some((Json::Boolean(false), b_res))
     } else {
         None
     }
 }
 
-fn parse_hexes(input: &String, loc: usize) -> Option<char> {
-    if let Ok(num) = u32::from_str_radix(&input[loc..loc+4], 16) {
+fn parse_hexes(input: &str) -> Option<char> {
+    if let Ok(num) = u32::from_str_radix(&input[..4], 16) {
         char::from_u32(num)
     } else {
         None
     }
 }
 
-fn parse_string_until(input: &mut String, delim: char) -> Option<Json> {
-    trim(input, 1);
+fn parse_string_until(input: &str, delim: char) -> Option<(Json, &str)> {
     if let Some(mut mat) = input.find(delim) {
         while let Some('\\') = input.chars().nth(mat-1) {
-            mat += 1 + input[(mat+1)..].find(delim).unwrap();
+            mat += 1 + input[mat+1..].find(delim)?
         }
 
+        // TODO: do this with a loop.
         let mut result = input[..mat].to_string();
         result = result.replace("\\\\", "\\");
         result = result.replace("\\\"", "\"");
@@ -97,10 +42,11 @@ fn parse_string_until(input: &mut String, delim: char) -> Option<Json> {
         result = result.replace("\\n", "\n");
         result = result.replace("\\t", "\t");
 
+        // Hex parsing. Max 4 characters.
         let mut to_replace: HashMap<String, char> = HashMap::new();
         let mut uni = result.find("\\u");
         while let Some(res) = uni {
-            if let Some(c) = parse_hexes(&result, res+2) {
+            if let Some(c) = parse_hexes(&result[res+2..]) {
                 to_replace.insert(result[res..res+6].to_string(), c);
                 uni = result[res+6..].find("\\u").map(|r| r + res + 6);
             } else {
@@ -112,115 +58,85 @@ fn parse_string_until(input: &mut String, delim: char) -> Option<Json> {
             result = result.replace(&key, &value.to_string());
         }
 
-        trim(input, mat+1);
-        return Some(Json::String(result))
+        return Some((Json::String(result), &input[mat+1..]))
     }
     panic!("Bad string")
 }
 
-pub fn parse_string(input: &mut String) -> Option<Json> {
-    if let Some(_cl) = get_char(input, '"') {
-        parse_string_until(input, '"')
-    } else if let Some(_cl) = get_char(input, '\'') {
-        parse_string_until(input, '\'')
+pub fn parse_string(input: &str) -> Option<(Json, &str)> {
+    if let Some(cl) = get_char_s(input, '"') {
+        parse_string_until(cl, '"')
+    } else if let Some(cl) = get_char_s(input, '\'') {
+        parse_string_until(cl, '\'')
     } else {
         None
     }
 }
 
-fn get_number(input: &mut String) -> Option<String> {
-    let mut v = String::new();
-    for c in input.chars() {
-        if c.is_numeric() {
-            v.push(c);
+fn get_exponent(input: &str) -> Option<(&str, &str)> {
+    if let Some(ex_res) = get_chars_s(input, vec!['e', 'E']) {
+        if let Some(s_res) = get_char_s(ex_res.1, '-') {
+            return get_number_string(s_res).map(|(_, rest)| (s_res, rest))
         } else {
-            break;
+            return get_number_string(input)
         }
     }
-
-    let len = v.len();
-    if len == 0 {
-        None
-    } else {
-        trim(input, len);
-        Some(v)
-    }
+    None
 }
 
-fn get_exponent(input: &mut String) -> Option<String> {
-    if let Some(_c1) = get_chars(input, vec!['e', 'E']) {
-        trim(input, 1);
-        if let Some(_sign) = get_char(input, '-') {
-            trim(input, 1);
-            if let Some(digit) = get_number(input) {
-                Some(String::from("-") + &digit)
-            } else {
-                panic!("Bad exponent")
-            }
-        } else {
-            get_number(input)
-        }
+fn get_decimals(input: &str) -> Option<(&str, &str)> {
+    if let Some(d_res) = get_char_s(input, '.') {
+        get_number_string(d_res)
     } else {
         None
     }
 }
 
-fn get_decimals(input: &mut String) -> Option<String> {
-    if let Some(_c1) = get_char(input, '.') {
-        trim(input, 1);
-        get_number(input)
-    } else {
-        None
-    }
-}
-
-fn to_float(base: String, decimals: Option<String>) -> f64 {
-    let mut base = base;
+fn to_float(base: &str, decimals: Option<&str>) -> f64 {
+    let mut base = base.to_string();
     if let Some(decs) = decimals {
         base.push('.');
-        base.push_str(decs.as_str());
+        base.push_str(decs);
     }
     base.parse::<f64>().unwrap()
 }
 
-pub fn parse_number(input: &mut String) -> Option<Json> {    
-    if let Some(_c1) = get_char(input, '-') {
-        trim(input, 1);
-        if let Some(Json::Number(res_num)) = parse_number(input) {
-            Some(Json::Number(-res_num))
+pub fn parse_number(input: &str) -> Option<(Json, &str)> {    
+    if let Some(s_res) = get_char_s(input, '-') {
+        if let Some((Json::Number(res_num), rest)) = parse_number(s_res) {
+            Some((Json::Number(-res_num), rest))
         } else {
             panic!("Bad negative number")
         }
-    } else if let Some(num) = get_number(input) {
-        if let Some(exp) = get_exponent(input) {
-            Some(Json::Number(to_float(num, None) * (10_f64).powf(to_float(exp, None))))
-        } else if let Some(decimals) = get_decimals(input) {
-            if let Some(exp) = get_exponent(input) {
-                Some(Json::Number(to_float(num, Some(decimals)) * (10_f64).powf(to_float(exp, None))))
+    } else if let Some(num_res) = get_number_string(input) {
+        if let Some(exp_res) = get_exponent(num_res.1) {
+            let number = to_float(num_res.0, None) * (10_f64).powf(to_float(exp_res.0, None));
+            return Some((Json::Number(number), exp_res.1))
+        } else if let Some(decimal_res) = get_decimals(num_res.1) {
+            if let Some(exp_res) = get_exponent(decimal_res.1) {
+                let number = to_float(num_res.0, Some(decimal_res.0)) * (10_f64).powf(to_float(exp_res.0, None));
+                return Some((Json::Number(number), exp_res.1))
             } else {
-                Some(Json::Number(to_float(num, Some(decimals))))
+                return Some((Json::Number(to_float(num_res.0, Some(decimal_res.0))), decimal_res.1))
             }
         } else {
-            Some(Json::Number(to_float(num, None)))
+            return Some((Json::Number(to_float(num_res.0, None)), num_res.1))
         }
     } else {
         None
     }
 }
 
-pub fn parse_array(input: &mut String) -> Option<Json> {
-    if let Some(_b) = get_char(input, '[') {
-        trim(input, 1);
+pub fn parse_array(input: &str) -> Option<(Json, &str)> {
+    if let Some(b1_res) = get_char_s(input, '[') {
         let mut arr: Vec<Json> = Vec::new();
-        let mut parse_result: Option<Json> = parse_json(input);
-        while let Some(ref el) = parse_result {
-            arr.push(el.clone());
-            if let Some(_p) = get_char(input, ',') {
-                trim(input, 1);
-                parse_result = parse_json(input);
-            } else if let Some(_p) = get_char(input, ']') {
-                trim(input, 1);
-                return Some(Json::Array(arr))
+        let mut parse_result = parse_json(b1_res);
+        while let Some(el) = parse_result {
+            arr.push(el.0);
+            if let Some(c_res) = get_char_s(el.1, ',') {
+                parse_result = parse_json(c_res);
+            } else if let Some(b2_res) = get_char_s(el.1, ']') {
+                return Some((Json::Array(arr), b2_res))
             } else {
                 panic!("Bad array")
             }
@@ -229,32 +145,28 @@ pub fn parse_array(input: &mut String) -> Option<Json> {
     None
 }
 
-fn parse_key_value(input: &mut String) -> Option<(String, Json)> {
-    if let Some(Json::String(key)) = parse_string(input) {
-        if let Some(_delim) = get_char(input, ':') {
-            trim(input, 1);
-            if let Some(value) = parse_json(input) {
-                return Some((key, value))
+fn parse_key_value(input: &str) -> Option<(String, Json, &str)> {
+    if let Some((Json::String(key), v_res)) = parse_string(input) {
+        if let Some(d_res) = get_char_s(v_res, ':') {
+            if let Some(value) = parse_json(d_res) {
+                return Some((key, value.0, value.1))
             }
         }
     } 
     None
 }
 
-pub fn parse_object(input: &mut String) -> Option<Json> {
-    if let Some(_b) = get_char(input, '{') {
-        trim(input, 1);
+pub fn parse_object(input: &str) -> Option<(Json, &str)> {
+    if let Some(b1_res) = get_char_s(input, '{') {
         let mut map: HashMap<String, Json> = HashMap::new();
-        let mut parse_result = parse_key_value(input);
+        let mut parse_result = parse_key_value(b1_res);
 
-        while let Some(ref el) = parse_result {
-            map.insert(el.0.clone(), el.1.clone());
-            if let Some(_p) = get_char(input, ',') {
-                trim(input, 1);
-                parse_result = parse_key_value(input);
-            } else if let Some(_p) = get_char(input, '}') {
-                trim(input, 1);
-                return Some(Json::Object(map))
+        while let Some(el) = parse_result {
+            map.insert(el.0, el.1);
+            if let Some(c_res) = get_char_s(el.2, ',') {
+                parse_result = parse_key_value(c_res);
+            } else if let Some(b2_res) = get_char_s(el.2, '}') {
+                return Some((Json::Object(map), b2_res))
             } else {
                 panic!("bad object")
             }
@@ -263,7 +175,7 @@ pub fn parse_object(input: &mut String) -> Option<Json> {
     None
 }
 
-pub fn parse_json(input: &mut String) -> Option<Json> {
+pub fn parse_json(input: &str) -> Option<(Json, &str)> {
     if let Some(json) = parse_null(input) {
         return Some(json);
     }

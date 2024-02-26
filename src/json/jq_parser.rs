@@ -1,61 +1,6 @@
 use std::collections::HashMap;
 
-use super::{jq_components::Jq, json_parser};
-
-static TO_SKIP: [char; 3] = ['\n', '\t', ' '];
-
-fn skip_stuff(input: &str) -> &str {
-    for (i, char) in input.chars().enumerate()  {
-        if !TO_SKIP.contains(&char) {
-            return &input[i..]
-        }
-    }
-    ""
-}
-
-fn get_any_char_s(input: &str) -> Option<(char, &str)> {
-    let input = skip_stuff(input);
-    if let Some(ch) = input.chars().nth(0) {
-        return Some((ch, &input[1..]))
-    }
-    None
-}
-
-fn get_any_char(input: &str) -> Option<(char, &str)> {
-    if let Some(ch) = input.chars().nth(0) {
-        return Some((ch, &input[1..]))
-    }
-    None
-}
-
-fn get_char_s(input: &str, c: char) -> Option<&str> {
-    let input = skip_stuff(input);
-    if let Some(ch) = input.chars().nth(0) {
-        if c == ch {
-            return Some(&input[1..]);
-        }
-    }
-    None
-}
-
-fn get_number(input: &str) -> Option<(usize, &str)> {
-    for (i, c) in input.chars().enumerate() {
-        if i == 0 && !c.is_numeric() {
-            return None
-        }
-        if !c.is_numeric() {
-            if let Ok(number) = &input[..i].parse::<usize>() {
-                return Some((number.clone(), &input[i..]))
-            }
-        }
-    }
-    if let Ok(number) = input.parse::<usize>() {
-        Some((number, ""))
-    } else {
-        None
-    }
-}
-
+use super::{jq_components::Jq, json_parser, util::*};
 
 fn parse_parenthesis(input: &str) -> Option<(Jq, &str)> {
     if let Some(rest) = get_char_s(input, '(') {
@@ -232,23 +177,23 @@ fn parse_recursive(input: &str) -> Option<(Jq, &str)> {
 }
 
 fn parse_null(input: &str) -> Option<(Jq, &str)> {
-    let mut json_input = input.to_string();
-    json_parser::parse_null(&mut json_input).map(|json| {(Jq::from(json), &input[input.len()-json_input.len()..])})
+    json_parser::parse_null(input)
+            .map(|(json, res)| {(Jq::from(json), res)})
 }
 
 fn parse_boolean(input: &str) -> Option<(Jq, &str)> {
-    let mut json_input = input.to_string();
-    json_parser::parse_boolean(&mut json_input).map(|json| {(Jq::from(json), &input[input.len()-json_input.len()..])})
+    json_parser::parse_boolean(input)
+            .map(|(json, res)| {(Jq::from(json), res)})
 }
 
 fn parse_number(input: &str) -> Option<(Jq, &str)> {
-    let mut json_input = input.to_string();
-    json_parser::parse_number(&mut json_input).map(|json| {(Jq::from(json), &input[input.len()-json_input.len()..])})
+    json_parser::parse_number(input)
+            .map(|(json, res)| {(Jq::from(json), res)})
 }
 
 fn parse_string(input: &str) -> Option<(Jq, &str)> {
-    let mut json_input = input.to_string();
-    json_parser::parse_string(&mut json_input).map(|json| {(Jq::from(json), &input[input.len()-json_input.len()..])})
+    json_parser::parse_string(input)
+            .map(|(json, res)| {(Jq::from(json), res)})
 }
 
 fn unpack_comma_to_array(input: Jq) -> Vec<Jq> {
@@ -267,9 +212,10 @@ fn parse_array(input: &str) -> Option<(Jq, &str)> {
         if let Some(b2_loc) = b1_res.find(']') {
             if let Some(el) = parse_jq(&b1_res[..b2_loc]) {
                 if skip_stuff(el.1) == "" {
+                    // Unpack because of the comma operator. It has a very high precedence.
                     return Some((Jq::Array(unpack_comma_to_array(el.0)), &b1_res[b2_loc+1..]))
                 } else {
-                    panic!("Bad array")
+                    panic!("Bad Jq array")
                 }
             } else {
                 return Some((Jq::Iterator, &b1_res[b2_loc+1..]))
