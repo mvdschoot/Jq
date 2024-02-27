@@ -15,7 +15,15 @@ pub enum Json {
 
 impl Display for Json {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", print(self))
+        let mut writer = write!(f, "");
+        let res = print(self);
+        for l1 in res {
+            for l2 in l1 {
+                writer = writer.and(write!(f, "{}", l2));
+            }
+            writer = writer.and(write!(f, "\n"));
+        }
+        writer
     }
 }
 

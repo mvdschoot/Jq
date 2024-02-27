@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::{env, fs};
 
+use colored::ColoredString;
 use json::jq_parser;
 
 use crate::json::jq_interpreter;
@@ -10,7 +11,7 @@ pub mod json;
 
 fn main() {
     let mut arguments = env::args();
-    if arguments.len() != 3 {
+    if arguments.len() < 2 || arguments.len() > 3 {
         eprintln!("There should be extra 2 arguments: a file name and a Jq string");
         return
     }
@@ -22,15 +23,26 @@ fn main() {
     let mut input: String = fs::read_to_string(file_location).expect("Cannot find file");
 
     // let mut input = fs::read_to_string("test.json").unwrap();
-    // let jq_text = " |(. | .pom) | .".to_string();
+    // let jq_text = " | .".to_string();
 
     if let Some((res, leftover)) = json::json_parser::parse_json(&mut input) {
         if leftover == "" {
-            let jq_text = arguments.nth(0).expect("Unreachable");
+            let jq_text = arguments.nth(0).unwrap_or(".".to_string());
             if let Some(parsed) = jq_parser::parse(jq_text.as_str()) {
                 let result = jq_interpreter::interpret(vec![res], parsed);
                 match result {
-                    Ok(res) => print!("{}", res.iter().map(print).collect::<Vec<String>>().join("\n")),
+                    Ok(res) => {
+                        let to_print = res.iter().map(print).collect::<Vec<Vec<Vec<ColoredString>>>>();
+                        for l in to_print {
+                            for l2 in l {
+                                for l3 in l2 {
+                                    print!("{}", l3);
+                                }
+                                print!("\n")
+                            }
+                        }
+                        print!("\n")
+                    },
                     Err(err) => eprintln!("Error with interpreting: {err}")
                 }
             } else {
