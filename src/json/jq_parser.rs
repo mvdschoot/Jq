@@ -2,26 +2,10 @@ use std::collections::HashMap;
 
 use super::{jq_components::Jq, json_parser, util::*};
 
-fn parse_parenthesis(input: &str) -> Option<(Jq, &str)> {
-    if let Some(rest) = get_char_s(input, '(') {
-        if let Some(loc2) = rest.find(')') {
-            if let Some(content) = parse(&rest[..loc2]) {
-                return Some((Jq::Parenthesis(Box::new(content)), &rest[loc2+1..]))
-            } else {
-                panic!("No bad parenthesis content")
-            }
-        } else {
-            panic!("No closing parenthesis")
-        }
-    }
-    None
-}
-
-fn avoid_parenthesis(input: &str, to_find: char) -> Option<usize> {
-    // input.find(to_find)
+fn avoid_parenthesis(input: &str, to_find: &str) -> Option<usize> {
     let mut depths = (0, 0);
     for (i, c) in input.chars().enumerate() {
-        if c == to_find && depths.0 == 0 && depths.1 == 0 {
+        if input[i..].starts_with(to_find) && depths.0 == 0 && depths.1 == 0 {
             return Some(i)
         }
         if c == '(' {
@@ -44,8 +28,23 @@ fn avoid_parenthesis(input: &str, to_find: char) -> Option<usize> {
     None
 }
 
+fn parse_parenthesis(input: &str) -> Option<(Jq, &str)> {
+    if let Some(rest) = get_char_s(input, '(') {
+        if let Some(loc2) = avoid_parenthesis(rest, ")") {
+            if let Some(content) = parse(&rest[..loc2]) {
+                return Some((Jq::Parenthesis(Box::new(content)), &rest[loc2+1..]))
+            } else {
+                panic!("No bad parenthesis content")
+            }
+        } else {
+            panic!("No closing parenthesis")
+        }
+    }
+    None
+}
+
 fn parse_pipe(input: &str) -> Option<(Jq, &str)> {
-    if let Some(p_loc) = avoid_parenthesis(input, '|') {
+    if let Some(p_loc) = avoid_parenthesis(input, "|") {
         let left = parse(&input[..p_loc]).unwrap_or_else(|| Jq::Input);
 
         match parse(&input[p_loc+1..]) {
@@ -58,7 +57,7 @@ fn parse_pipe(input: &str) -> Option<(Jq, &str)> {
 }
 
 fn parse_comma(input: &str) -> Option<(Jq, &str)> {
-    if let Some(c_loc) = avoid_parenthesis(input, ',') {
+    if let Some(c_loc) = avoid_parenthesis(input, ",") {
         let left = match parse(&input[..c_loc]) {
             Some(l) => l,
             None => panic!("Bad comma left side")
@@ -74,12 +73,16 @@ fn parse_comma(input: &str) -> Option<(Jq, &str)> {
 }
 
 fn parse_optional(input: &str) -> Option<(Jq, &str)> {
-    if let Some(obj_res) = parse_id_chain(input) {
-        if let Some(q_res) = get_char_s(obj_res.1, '?') {
-            return Some((Jq::Optional(Box::new(obj_res.0)), q_res))
+    if let Some(q_loc) = avoid_parenthesis(input, "?") {
+        if let Some(res) = parse_jq(&input[..q_loc]) {
+            if skip_stuff(res.1) != "" {
+                return None
+            } else {
+                return Some((Jq::Optional(Box::new(res.0)), &input[q_loc+1..]))
+            }
         }
     }
-    return None
+    None
 }
 
 fn parse_iterator(input: &str) -> Option<(Jq, &str)> {
@@ -94,14 +97,15 @@ fn parse_iterator(input: &str) -> Option<(Jq, &str)> {
 }
 
 fn parse_slice(input: &str) -> Option<(Jq, &str)> {
-    if let Some(a) = get_number(input) {
-        if let Some(s_res) = get_char_s(a.1, ':') {
-            if let Some(b) = get_number(s_res) {
-                return Some((Jq::Slice(a.0, b.0), b.1))
-            }
-        }
+    let first = get_number(input);
+    let input = if first.is_some() {first.unwrap().1} else {input};
+
+    if let Some(s_res) = get_char_s(input, ':') {
+        let second = get_number(s_res);
+        Some((Jq::Slice(first.map(|f| f.0), second.map(|f| f.0)), if second.is_some() {second.unwrap().1} else {s_res}))   
+    } else {
+        None
     }
-    None
 }
 
 fn is_letter(c: char) -> bool{
@@ -209,7 +213,7 @@ fn unpack_comma_to_array(input: Jq) -> Vec<Jq> {
 
 fn parse_array(input: &str) -> Option<(Jq, &str)> {
     if let Some(b1_res) = get_char_s(&input, '[') {
-        if let Some(b2_loc) = b1_res.find(']') {
+        if let Some(b2_loc) = avoid_parenthesis(b1_res, "]") {
             if let Some(el) = parse_jq(&b1_res[..b2_loc]) {
                 if skip_stuff(el.1) == "" {
                     // Unpack because of the comma operator. It has a very high precedence.
@@ -227,8 +231,8 @@ fn parse_array(input: &str) -> Option<(Jq, &str)> {
     None
 }
 
-fn parse_key_value(input: &str) -> Option<(String, Jq, &str)> {
-    if let Some((Jq::String(key), k_res)) = parse_jq(input) {
+fn parse_key_value(input: &str) -> Option<(Jq, Jq, &str)> {
+    if let Some((key, k_res)) = parse_jq(input) {
         if let Some(d_res) = get_char_s(k_res, ':') {
             if let Some(value) = parse_jq(d_res) {
                 return Some((key, value.0, value.1))
@@ -240,7 +244,7 @@ fn parse_key_value(input: &str) -> Option<(String, Jq, &str)> {
 
 pub fn parse_object(input: &str) -> Option<(Jq, &str)> {
     if let Some(b1_res) = get_char_s(input, '{') {
-        let mut map: HashMap<String, Jq> = HashMap::new();
+        let mut map: HashMap<Jq, Jq> = HashMap::new();
         let mut parse_result = parse_key_value(b1_res);
 
         while let Some(el) = parse_result {
@@ -257,6 +261,142 @@ pub fn parse_object(input: &str) -> Option<(Jq, &str)> {
     None
 }
 
+fn parse_binary_operation<'a>(input: &'a str, op: &'a str, to_create: fn(Box<Jq>, Box<Jq>) -> Jq) -> Option<(Jq, &'a str)> {
+    if let Some(op_loc) = avoid_parenthesis(input, op) {
+        if let Some(first) = parse_jq(&input[..op_loc]) {
+            if skip_stuff(first.1) != "" {
+                return None
+            }
+
+            if let Some(second) = parse_jq(&input[op_loc+op.len()..]) {
+                return Some((to_create(Box::from(first.0), Box::from(second.0)), second.1))
+            }
+        }
+    }
+    None
+}
+
+fn parse_if_statement(input: &str) -> Option<(Jq, &str)> {
+    if let Some(if_word) = get_word_s(input, "if") {
+        if let Some(if_res) = parse_jq(if_word) {
+            if let Some(then_word) = get_word_s(if_res.1, "then") {
+                if let Some(then_res) = parse_jq(then_word) {
+                    if let Some(else_word) = get_word_s(then_res.1, "else") {
+                        if let Some(else_res) = parse_jq(else_word) {
+                            if let Some(end_word) = get_word_s(else_res.1, "end") {
+                                return Some((Jq::IfStatement(Box::from(if_res.0), Box::from(then_res.0), Some(Box::from(else_res.0))), end_word))
+                            }
+                        }
+                    } else if let Some(end_word) = get_word_s(then_res.1, "end") {
+                        return Some((Jq::IfStatement(Box::from(if_res.0), Box::from(then_res.0), None), end_word))
+                    }
+                } 
+            }
+        }
+    }
+    None
+}
+
+fn parse_arithmetic(input: &str) -> Option<(Jq, &str)> {
+    if let Some(a) = parse_binary_operation(input, "+", |a, b| Jq::Addition(a, b)) {
+        return Some(a)
+    }
+    if let Some(a) = parse_binary_operation(input, "-", |a, b| Jq::Subtraction(a, b)) {
+        return Some(a)
+    }
+
+    if let Some(a) = parse_binary_operation(input, "*", |a, b| Jq::Multiplication(a, b)) {
+        return Some(a)
+    }
+    if let Some(a) = parse_binary_operation(input, "/", |a, b| Jq::Division(a, b)) {
+        return Some(a)
+    }
+    if let Some(a) = parse_binary_operation(input, "%", |a, b| Jq::Modulo(a, b)) {
+        return Some(a)
+    }
+
+    None
+}
+
+fn parse_not(input: &str) -> Option<(Jq, &str)> {
+    if let Some(not_res) = get_word_s(input, "not") {
+        parse_jq(not_res).map(|notted| (Jq::Not(Box::from(notted.0)), notted.1))
+    } else {
+        None
+    }
+}
+
+fn parse_comparison(input: &str) -> Option<(Jq, &str)> {
+    if let Some(a) = parse_binary_operation(input, "and", |a, b| Jq::And(a, b)) {
+        return Some(a)
+    }
+    if let Some(a) = parse_binary_operation(input, "or", |a, b| Jq::Or(a, b)) {
+        return Some(a)
+    }
+    if let Some(a) = parse_not(input) {
+        return Some(a)
+    }
+
+    if let Some(a) = parse_binary_operation(input, "==", |a, b| Jq::Eq(a, b)) {
+        return Some(a)
+    }
+    if let Some(a) = parse_binary_operation(input, "!=", |a, b| Jq::NotEq(a, b)) {
+        return Some(a)
+    }
+    if let Some(a) = parse_binary_operation(input, ">", |a, b| Jq::Gt(a, b)) {
+        return Some(a)
+    }
+    if let Some(a) = parse_binary_operation(input, ">=", |a, b| Jq::Gte(a, b)) {
+        return Some(a)
+    }
+    if let Some(a) = parse_binary_operation(input, "<", |a, b| Jq::Lt(a, b)) {
+        return Some(a)
+    }
+    if let Some(a) = parse_binary_operation(input, "<=", |a, b| Jq::Lte(a, b)) {
+        return Some(a)
+    }
+
+    None
+}
+
+fn parse_alternative(input: &str) -> Option<(Jq, &str)> {
+    parse_binary_operation(input, "//", |a, b| Jq::Alternative(a, b))
+}
+
+fn parse_function_single_arg<'a>(input: &'a str, func_name: &'a str, to_create: fn(Option<Box<Jq>>) -> Jq) -> Option<(Jq, &'a str)> {
+    if let Some(func_name_res) = get_word_s(input, func_name) {
+        if let Some((Jq::Parenthesis(parenthesis_content), rest)) = parse_parenthesis(func_name_res) {
+            return Some((to_create(Some(parenthesis_content)), rest));
+        } else {
+            return Some((to_create(None), func_name_res))
+        }
+    }
+    None
+}
+
+fn parse_functions(input: &str) -> Option<(Jq, &str)> {
+    if let Some(a) = parse_function_single_arg(input, "abs", |arg| Jq::Abs(arg)) {
+        return Some(a)
+    }
+    if let Some(a) = parse_function_single_arg(input, "length", |arg| Jq::Length(arg)) {
+        return Some(a)
+    }
+    if let Some(a) = parse_function_single_arg(input, "keys", |arg| Jq::Keys(arg)) {
+        return Some(a)
+    }
+    if let Some(a) = parse_function_single_arg(input, "has", |arg| Jq::Has(arg.unwrap())) {
+        return Some(a)
+    }
+    if let Some(a) = parse_function_single_arg(input, "in", |arg| Jq::In(arg.unwrap())) {
+        return Some(a)
+    }
+    if let Some(a) = parse_function_single_arg(input, "map", |arg| Jq::Map(arg.unwrap())) {
+        return Some(a)
+    }
+
+    None
+}
+
 fn parse_jq(input: &str) -> Option<(Jq, &str)> {
     if let Some(a) = parse_parenthesis(input) {
         return Some(a)
@@ -266,6 +406,22 @@ fn parse_jq(input: &str) -> Option<(Jq, &str)> {
         return Some(a)
     }
     if let Some(a) = parse_comma(input) {
+        return Some(a)
+    }
+
+    // Alternative
+    if let Some(a) = parse_alternative(input) {
+        return Some(a)
+    }
+
+    // Operators
+    if let Some(a) = parse_if_statement(input) {
+        return Some(a)
+    }
+    if let Some(a) = parse_comparison(input) {
+        return Some(a)
+    }
+    if let Some(a) = parse_arithmetic(input) {
         return Some(a)
     }
 
@@ -286,6 +442,11 @@ fn parse_jq(input: &str) -> Option<(Jq, &str)> {
         return Some(a)
     }
     if let Some(a) = parse_identity(input) {
+        return Some(a)
+    }
+
+    // Functions
+    if let Some(a) = parse_functions(input) {
         return Some(a)
     }
 

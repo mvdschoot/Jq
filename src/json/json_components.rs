@@ -39,3 +39,28 @@ impl Clone for Json {
         }
     }
 }
+
+impl PartialEq for Json {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Boolean(l0), Self::Boolean(r0)) => l0 == r0,
+            (Self::Number(l0), Self::Number(r0)) => l0 == r0,
+            (Self::String(l0), Self::String(r0)) => l0 == r0,
+            (Self::Array(l0), Self::Array(r0)) => l0 == r0,
+            (Self::Object(l0), Self::Object(r0)) => l0 == r0,
+            _ => core::mem::discriminant(self) == core::mem::discriminant(other),
+        }
+    }
+}
+
+impl PartialOrd for Json {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match (self, other) {
+            (Self::Boolean(l0), Self::Boolean(r0)) => l0.partial_cmp(r0),
+            (Self::Number(l0), Self::Number(r0)) => l0.partial_cmp(r0),
+            (Self::String(l0), Self::String(r0)) => l0.partial_cmp(r0),
+            (Self::Array(l0), Self::Array(r0)) => l0.partial_cmp(r0),
+            _ => panic!("Incomparable: {} {}", self, other)
+        }
+    }
+}

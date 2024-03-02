@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::json::{json_components::Json, util::*};
 
 pub fn parse_null(input: &str) -> Option<(Json, &str)> {
-    if let Some(n_res) = get_word(input, "null") {
+    if let Some(n_res) = get_word_s(input, "null") {
         Some((Json::Null, n_res))
     } else {
         None
@@ -11,9 +11,9 @@ pub fn parse_null(input: &str) -> Option<(Json, &str)> {
 }
 
 pub fn parse_boolean(input: &str) -> Option<(Json, &str)> {
-    if let Some(b_res) = get_word(input, "true") {
+    if let Some(b_res) = get_word_s(input, "true") {
         Some((Json::Boolean(true), b_res))
-    } else if let Some(b_res) = get_word(input, "false") {
+    } else if let Some(b_res) = get_word_s(input, "false") {
         Some((Json::Boolean(false), b_res))
     } else {
         None
@@ -30,6 +30,10 @@ fn parse_hexes(input: &str) -> Option<char> {
 
 fn parse_string_until(input: &str, delim: char) -> Option<(Json, &str)> {
     if let Some(mut mat) = input.find(delim) {
+        if mat == 0 {
+            return Some((Json::String("".to_string()), &input[1..]));
+        }
+
         while let Some('\\') = input.chars().nth(mat-1) {
             mat += 1 + input[mat+1..].find(delim)?
         }

@@ -23,7 +23,7 @@ fn main() {
     let mut input: String = fs::read_to_string(file_location).expect("Cannot find file");
 
     // let mut input = fs::read_to_string("test.json").unwrap();
-    // let jq_text = " | .".to_string();
+    // let jq_text = ".pom.dependencies[].a | . * 3".to_string();
 
     if let Some((res, leftover)) = json::json_parser::parse_json(&mut input) {
         if leftover == "" {

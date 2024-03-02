@@ -80,7 +80,7 @@ pub fn get_number(input: &str) -> Option<(usize, &str)> {
     }
 }
 
-pub fn get_word<'a>(input: &'a str, word: &'a str) -> Option<&'a str> {
+pub fn get_word_s<'a>(input: &'a str, word: &'a str) -> Option<&'a str> {
     let input = skip_stuff(input);
     assert_length!(input);
     if let Some(res) = skip_stuff(input).find(word) {
