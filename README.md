@@ -4,8 +4,10 @@ It is written in Rust.
 It's my first Rust project. For learning purposes and fun.
 
 - Limited UTF support.
-- Most functions are not implemented, except: 'abs', 'length', 'in', 'has', 'map'.
 - Conditionals and comparisons like if-statements, '==', '<' are implemented. 
-- 'Try/catch' is not implemented, but the '?' operator has the same functionality.
 - Output is colored
-- TODO: binding/assignment
+- Not implemented:
+    - Most functions, except: 'abs', 'length', 'in', 'has', 'map'.
+    - 'Try/catch', but the '?' operator has the same functionality.
+    - Breaking out of control structures.
+    - In the [Jq manual](https://jqlang.github.io/jq/manual), everything from regular expressions downwards.
